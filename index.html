@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Track USPS, China Post, EMS, Cainiao, UPS, FedEx, DHL, and purchasing-agent shipments. Delivery estimates and history stay in this browser.">
+  <meta name="theme-color" content="#f3f4f6">
+  <title>Package Tracker</title>
+  <link rel="canonical" href="https://darenazhekbarovaboba-source.github.io/package-tracker/">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Package Tracker">
+  <meta property="og:description" content="Track USPS, China Post, EMS, Cainiao, UPS, FedEx, DHL, and purchasing-agent shipments. Delivery estimates and history stay in this browser.">
+  <meta property="og:url" content="https://darenazhekbarovaboba-source.github.io/package-tracker/">
+  <meta property="og:image" content="https://darenazhekbarovaboba-source.github.io/package-tracker/og-image.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:image:alt" content="Package Tracker — a free in-browser shipment log">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Package Tracker">
+  <meta name="twitter:description" content="Track USPS, China Post, agent shipments, and more. Your data stays in this browser.">
+  <meta name="twitter:image" content="https://darenazhekbarovaboba-source.github.io/package-tracker/og-image.png">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%234b5563'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='12' font-family='system-ui,sans-serif' font-weight='700' fill='%23f9fafb'%3EPT%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="header-inner">
+      <a class="brand" href="./">
+        <span class="brand-mark" aria-hidden="true">PT</span>
+        <span class="brand-name">Package Tracker</span>
+      </a>
+      <span class="header-note">Saved in this browser</span>
+    </div>
+  </header>
+
+  <main id="main" tabindex="-1">
+    <h1 class="page-title">Package Tracker</h1>
+    <p class="lede">Log USPS, China Post, EMS, Cainiao, UPS, FedEx, DHL, and purchasing-agent shipments. Estimated delivery, status history, and tracking links stay on this device — this page never calls a carrier API.</p>
+
+    <section class="stats" aria-label="Shipment totals">
+      <div class="stat-card">
+        <p class="stat-label">Active</p>
+        <p class="stat-value" id="stat-active">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Arriving this week</p>
+        <p class="stat-value" id="stat-week">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Overdue</p>
+        <p class="stat-value" id="stat-overdue">0</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-label">Delivered this month</p>
+        <p class="stat-value" id="stat-delivered">0</p>
+      </div>
+    </section>
+
+    <section class="panel" aria-labelledby="form-heading">
+      <h2 id="form-heading">Add a package</h2>
+      <p class="edit-banner" id="edit-banner" hidden></p>
+      <form id="pkg-form" novalidate>
+        <div class="field-grid">
+          <div class="span-12">
+            <span class="field-label" id="kind-label">Shipment type</span>
+            <div class="segmented" role="group" aria-labelledby="kind-label">
+              <button type="button" id="kind-carrier" aria-pressed="true">Regular shipment</button>
+              <button type="button" id="kind-agent" aria-pressed="false">Agent shipment</button>
+            </div>
+          </div>
+
+          <div class="span-6">
+            <label for="item-name">Item or nickname</label>
+            <input id="item-name" name="name" type="text" required maxlength="120" autocomplete="off" placeholder="What is in the package?">
+          </div>
+          <div class="span-3">
+            <label for="status">Status</label>
+            <select id="status" name="status"></select>
+          </div>
+          <div class="span-3">
+            <label for="eta">Estimated delivery <span class="optional">(optional)</span></label>
+            <input id="eta" name="eta" type="date">
+          </div>
+
+          <div class="span-7" id="wrap-tracking">
+            <label for="tracking-number">Tracking number</label>
+            <input id="tracking-number" name="tracking" type="text" maxlength="40" autocomplete="off" placeholder="Paste a tracking number" spellcheck="false">
+            <p class="hint" id="detect-hint" hidden></p>
+          </div>
+          <div class="span-5" id="wrap-carrier">
+            <label for="carrier">Carrier</label>
+            <select id="carrier" name="carrier"></select>
+          </div>
+
+          <div class="span-6 agent-only" hidden>
+            <label for="agent-name">Agent or forwarder</label>
+            <input id="agent-name" name="agentName" type="text" maxlength="80" autocomplete="off" placeholder="Superbuy, CSSBuy, Wegobuy…">
+          </div>
+          <div class="span-3 agent-only" hidden>
+            <label for="agent-order">Agent order # <span class="optional">(optional)</span></label>
+            <input id="agent-order" name="agentOrder" type="text" maxlength="40" autocomplete="off" spellcheck="false">
+          </div>
+          <div class="span-3 agent-only" hidden>
+            <label for="agent-stage">Stage</label>
+            <select id="agent-stage" name="agentStage"></select>
+          </div>
+          <div class="span-7 agent-only" hidden>
+            <label for="domestic-tracking">Domestic tracking <span class="optional">(optional)</span></label>
+            <input id="domestic-tracking" name="domesticTracking" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="China-side or first-leg number">
+          </div>
+          <div class="span-5 agent-only" hidden>
+            <label for="domestic-carrier">Domestic carrier</label>
+            <select id="domestic-carrier" name="domesticCarrier"></select>
+          </div>
+          <div class="span-7 agent-only" hidden>
+            <label for="intl-tracking">International tracking <span class="optional">(optional)</span></label>
+            <input id="intl-tracking" name="intlTracking" type="text" maxlength="40" autocomplete="off" spellcheck="false" placeholder="Export or last-mile number">
+          </div>
+          <div class="span-5 agent-only" hidden>
+            <label for="intl-carrier">International carrier</label>
+            <select id="intl-carrier" name="intlCarrier"></select>
+          </div>
+
+          <div class="span-12 form-actions">
+            <button type="submit" class="btn btn-primary" id="save-btn">Add package</button>
+            <button type="button" class="btn btn-ghost" id="cancel-edit" hidden>Cancel</button>
+            <span class="visually-hidden" id="form-status" aria-live="polite"></span>
+          </div>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel" aria-labelledby="list-heading">
+      <div class="toolbar">
+        <h2 id="list-heading" style="margin:0">Packages</h2>
+        <div class="btn-row toolbar-controls">
+          <label class="search-label" for="search">
+            <span class="visually-hidden">Search packages</span>
+            <input id="search" type="search" placeholder="Search name, number, or note" maxlength="120">
+          </label>
+          <div class="segmented" role="group" aria-label="Filter by status">
+            <button type="button" id="filter-all" aria-pressed="true">All</button>
+            <button type="button" id="filter-active" aria-pressed="false">Active</button>
+            <button type="button" id="filter-delivered" aria-pressed="false">Delivered</button>
+          </div>
+          <label class="inline-label" for="filter-carrier">
+            <span>Carrier</span>
+            <select id="filter-carrier"></select>
+          </label>
+          <button type="button" class="btn btn-ghost" id="load-sample">Load sample data</button>
+          <button type="button" class="btn btn-ghost" id="export-json">Export JSON</button>
+          <button type="button" class="btn btn-ghost" id="import-json">Import JSON</button>
+          <input id="import-file" type="file" accept="application/json,.json" hidden>
+          <button type="button" class="btn btn-danger" id="clear-all">Clear data</button>
+        </div>
+      </div>
+      <p class="sort-note">Sorted by estimated delivery, soonest first. Packages without a date are listed last.</p>
+      <div id="package-list" class="pkg-list"></div>
+      <p class="empty" id="empty-state">No packages yet. Add one above, or load sample data to try the tracker.</p>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>This week starts on Sunday. Track buttons open the official carrier site and 17TRACK in a new tab; this page does not fetch tracking data. A JSON export is the only way to take a backup with you. Clearing site data will erase the list.</p>
+  </footer>
+  <p class="visually-hidden" id="app-status" aria-live="polite"></p>
+  <script src="app.js"></script>
+</body>
+</html>
