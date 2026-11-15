@@ -88,6 +88,7 @@
   var demoMode = false;
   var lastSeenDate = null;
   var carrierManual = { main: false, domestic: false, intl: false };
+  var lastNormalized = { main: "", domestic: "", intl: "" };
 
   function uid() {
     if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
@@ -140,19 +141,27 @@
     return String(raw || "").replace(/\s+/g, "").toUpperCase();
   }
 
+  function isAmbiguousUspsFedex(raw) {
+    return /^9\d{19}$/.test(normalizeTracking(raw));
+  }
+
   function detectCarrier(raw) {
     var n = normalizeTracking(raw);
     if (!n) return null;
     if (/^1Z[A-Z0-9]{16}$/.test(n)) return "ups";
-    if (/^9\d{19}$/.test(n) || /^9\d{21}$/.test(n) || /^9\d{25}$/.test(n)) return "usps";
+    if (/^96\d{20}$/.test(n)) return "fedex";
+    if (/^9\d{21}$/.test(n) || /^(70|71|73|82)\d{20}$/.test(n)) return "usps";
+    if (/^9\d{25}$/.test(n)) return "usps";
+    if (/^9\d{19}$/.test(n)) return "usps";
+    if (/^7\d{19}$/.test(n) || /^82\d{18}$/.test(n)) return "usps";
     if (/^[A-Z]{2}\d{9}US$/.test(n)) return "usps";
     if (/^[A-Z]{2}\d{9}CN$/.test(n)) return n.charAt(0) === "E" ? "ems" : "china-post";
-    if (/^LP[A-Z0-9]{10,}$/.test(n) || /^4PX[A-Z0-9]+$/.test(n) || /^YT\d{13,}$/.test(n) || /^AE[A-Z0-9]{10,}$/.test(n)) {
+    if (/^LP[A-Z0-9]{10,}$/.test(n) || /^4PX[A-Z0-9]+$/.test(n) || /^YT\d{13,}$/.test(n) || /^AE[A-Z0-9]{10,}$/.test(n) || /^CNG[A-Z0-9]{8,}$/.test(n)) {
       return "cainiao";
     }
     if (/^\d{12}$/.test(n) || /^\d{15}$/.test(n)) return "fedex";
-    if (/^\d{20}$/.test(n) && n.charAt(0) !== "9") return "fedex";
-    if (/^\d{10}$/.test(n) || /^GM\d{16,}$/.test(n) || /^JVGL[A-Z0-9]+$/.test(n)) return "dhl";
+    if (/^\d{20}$/.test(n)) return "fedex";
+    if (/^\d{10}$/.test(n) || /^GM\d{16,}$/.test(n) || /^JVGL[A-Z0-9]+$/.test(n) || /^JD[A-Z0-9]{8,}$/.test(n)) return "dhl";
     return null;
   }
 
@@ -172,6 +181,7 @@
       case "cainiao":
         return "https://global.cainiao.com/detail.htm?mailNoList=" + enc;
       case "china-post":
+        return "https://t.17track.net/en#nums=" + enc;
       case "ems":
         return "https://www.ems.com.cn/queryList?searchType=EMS&mailNo=" + enc;
       default:
@@ -226,9 +236,12 @@
 
   function packageCarriers(pkg) {
     var set = {};
-    if (pkg.carrier) set[pkg.carrier] = true;
-    if (pkg.domesticCarrier) set[pkg.domesticCarrier] = true;
-    if (pkg.intlCarrier) set[pkg.intlCarrier] = true;
+    if (pkg.kind === "agent") {
+      if (pkg.domesticCarrier) set[pkg.domesticCarrier] = true;
+      if (pkg.intlCarrier) set[pkg.intlCarrier] = true;
+    } else if (pkg.carrier) {
+      set[pkg.carrier] = true;
+    }
     return set;
   }
 
@@ -330,14 +343,19 @@
 
   function applyDetection(input, select, which) {
     var detected = detectCarrier(input.value);
-    if (detected && !carrierManual[which]) {
-      select.value = detected;
+    var hasNumber = !!normalizeTracking(input.value);
+    if (!carrierManual[which]) {
+      if (detected) select.value = detected;
+      else if (hasNumber) select.value = which === "main" ? "other" : "";
     }
     if (which === "main") {
-      if (detected) {
+      if (detected && isAmbiguousUspsFedex(input.value)) {
+        detectHint.hidden = false;
+        detectHint.textContent = "This 20-digit number starting with 9 could be USPS or FedEx. It’s set to USPS — change the carrier if you know it’s FedEx.";
+      } else if (detected) {
         detectHint.hidden = false;
         detectHint.textContent = "Detected as " + carrierLabel(detected) + ". You can change the carrier if this is wrong.";
-      } else if (normalizeTracking(input.value)) {
+      } else if (hasNumber) {
         detectHint.hidden = false;
         detectHint.textContent = "Carrier could not be detected automatically. Pick one, or leave as Other and use 17TRACK.";
       } else {
@@ -350,6 +368,8 @@
   function resetForm() {
     state.editingId = null;
     carrierManual = { main: false, domestic: false, intl: false };
+    lastNormalized = { main: "", domestic: "", intl: "" };
+    clearValidation();
     form.reset();
     statusSelect.value = "Label created";
     carrierSelect.value = "other";
@@ -380,7 +400,13 @@
     intlInput.value = pkg.intlTracking || "";
     intlCarrier.value = pkg.intlCarrier || "";
     carrierManual = { main: true, domestic: true, intl: true };
+    lastNormalized = {
+      main: normalizeTracking(pkg.trackingNumber || ""),
+      domestic: normalizeTracking(pkg.domesticTracking || ""),
+      intl: normalizeTracking(pkg.intlTracking || ""),
+    };
     detectHint.hidden = true;
+    clearValidation();
     editBanner.hidden = false;
     editBanner.textContent = "Editing “" + pkg.name + "”. History already logged stays unless you delete the package.";
     cancelEdit.hidden = false;
@@ -396,8 +422,8 @@
       name: nameInput.value.trim().slice(0, 120),
       status: statusSelect.value,
       eta: etaInput.value || "",
-      trackingNumber: normalizeTracking(trackingInput.value).slice(0, 40),
-      carrier: carrierSelect.value || "other",
+      trackingNumber: kind === "agent" ? "" : normalizeTracking(trackingInput.value).slice(0, 40),
+      carrier: kind === "agent" ? "" : (carrierSelect.value || "other"),
       agentName: agentNameInput.value.trim().slice(0, 80),
       agentOrder: agentOrderInput.value.trim().slice(0, 40),
       agentStage: agentStageSelect.value || "Ordered",
@@ -408,10 +434,80 @@
     };
   }
 
+  function trackingFields(values) {
+    var fields = [];
+    if (values.kind === "agent") {
+      if (values.domesticTracking) fields.push({ num: values.domesticTracking, el: domesticInput, label: "domestic tracking number" });
+      if (values.intlTracking) fields.push({ num: values.intlTracking, el: intlInput, label: "international tracking number" });
+    } else if (values.trackingNumber) {
+      fields.push({ num: values.trackingNumber, el: trackingInput, label: "tracking number" });
+    }
+    return fields;
+  }
+
+  function packageTrackingNumbers(pkg) {
+    var nums = [];
+    if (pkg.kind === "agent") {
+      if (pkg.domesticTracking) nums.push(normalizeTracking(pkg.domesticTracking));
+      if (pkg.intlTracking) nums.push(normalizeTracking(pkg.intlTracking));
+    } else if (pkg.trackingNumber) {
+      nums.push(normalizeTracking(pkg.trackingNumber));
+    }
+    return nums.filter(Boolean);
+  }
+
+  function findDuplicate(values, exceptId) {
+    var fields = trackingFields(values);
+    var i, j, field;
+    for (i = 0; i < fields.length; i++) {
+      for (j = i + 1; j < fields.length; j++) {
+        if (fields[i].num && fields[i].num === fields[j].num) {
+          return { el: fields[j].el, msg: "The domestic and international tracking numbers are the same." };
+        }
+      }
+    }
+    for (i = 0; i < fields.length; i++) {
+      field = fields[i];
+      var clash = state.packages.filter(function (pkg) {
+        return pkg.id !== exceptId && packageTrackingNumbers(pkg).indexOf(field.num) !== -1;
+      })[0];
+      if (clash) {
+        return { el: field.el, msg: "That " + field.label + " is already used on “" + clash.name + "”." };
+      }
+    }
+    return null;
+  }
+
+  function clearValidation() {
+    var box = document.getElementById("form-error");
+    if (box) {
+      box.hidden = true;
+      box.textContent = "";
+    }
+    [nameInput, trackingInput, agentNameInput, domesticInput, intlInput].forEach(function (el) {
+      el.removeAttribute("aria-invalid");
+      el.removeAttribute("aria-describedby");
+    });
+  }
+
+  function showValidation(msg, el) {
+    var box = document.getElementById("form-error");
+    box.hidden = false;
+    box.textContent = msg;
+    if (el) {
+      el.setAttribute("aria-invalid", "true");
+      el.setAttribute("aria-describedby", "form-error");
+      el.focus();
+    }
+    announce(msg);
+  }
+
   function validate(values) {
-    if (!values.name) return "Please enter an item name.";
-    if (values.kind === "agent" && !values.agentName) return "Please enter the agent or forwarder name.";
-    if (values.kind === "carrier" && !values.trackingNumber) return "Please enter a tracking number.";
+    if (!values.name) return { msg: "Please enter an item name.", el: nameInput };
+    if (values.kind === "agent" && !values.agentName) return { msg: "Please enter the agent or forwarder name.", el: agentNameInput };
+    if (values.kind === "carrier" && !values.trackingNumber) return { msg: "Please enter a tracking number.", el: trackingInput };
+    var dup = findDuplicate(values, state.editingId);
+    if (dup) return { msg: dup.msg, el: dup.el };
     return null;
   }
 
@@ -420,17 +516,35 @@
     var values = formValues();
     var err = validate(values);
     if (err) {
-      announce(err);
-      (values.kind === "agent" && !values.agentName ? agentNameInput : !values.name ? nameInput : trackingInput).focus();
+      showValidation(err.msg, err.el);
       return;
     }
+    clearValidation();
     var now = Date.now();
     if (state.editingId) {
       var existing = state.packages.filter(function (p) { return p.id === state.editingId; })[0];
       if (!existing) return;
+      var changes = [];
+      if (existing.status !== values.status) changes.push("Status changed to " + values.status);
+      if ((existing.eta || "") !== (values.eta || "")) changes.push(values.eta ? "ETA set to " + values.eta : "ETA cleared");
+      if ((existing.trackingNumber || "") !== (values.trackingNumber || "")) changes.push("Tracking number updated");
+      if ((existing.domesticTracking || "") !== (values.domesticTracking || "") || (existing.intlTracking || "") !== (values.intlTracking || "")) changes.push("Tracking numbers updated");
+      if (existing.kind === "agent" && existing.agentStage !== values.agentStage) changes.push("Stage set to " + values.agentStage);
+      if (existing.name !== values.name) changes.push("Renamed to “" + values.name + "”");
       Object.keys(values).forEach(function (k) { existing[k] = values[k]; });
       existing.updatedAt = now;
       if (existing.kind === "agent" && existing.agentStage === "Delivered") existing.status = "Delivered";
+      if (existing.kind === "agent" && existing.agentStage !== "Delivered" && existing.status === "Delivered") {
+        existing.status = statusForAgentStage(existing.agentStage, existing);
+      }
+      existing.history = existing.history || [];
+      existing.history.push({
+        id: uid(),
+        at: now,
+        status: existing.status,
+        location: "",
+        note: changes.length ? changes.join(". ") + "." : "Package updated.",
+      });
       save();
       announce("Saved changes to “" + existing.name + "”.");
     } else {
@@ -487,12 +601,27 @@
     render();
   }
 
+  function statusForAgentStage(stage, pkg) {
+    if (stage === "Delivered") return "Delivered";
+    if (pkg && pkg.history) {
+      var rows = pkg.history.slice().sort(function (a, b) { return b.at - a.at; });
+      var i;
+      for (i = 0; i < rows.length; i++) {
+        if (rows[i].status && rows[i].status !== "Delivered") return rows[i].status;
+      }
+    }
+    if (stage === "Ordered") return "Label created";
+    return "In transit";
+  }
+
   function setStage(id, stage) {
     var pkg = state.packages.filter(function (p) { return p.id === id; })[0];
     if (!pkg || pkg.agentStage === stage) return;
+    var leavingDelivered = pkg.agentStage === "Delivered" && stage !== "Delivered";
     pkg.agentStage = stage;
     pkg.updatedAt = Date.now();
     if (stage === "Delivered") pkg.status = "Delivered";
+    else if (leavingDelivered || pkg.status === "Delivered") pkg.status = statusForAgentStage(stage, pkg);
     else if (stage === "In destination country" && pkg.status === "Label created") pkg.status = "In transit";
     else if (stage === "Shipped international" && pkg.status === "Label created") pkg.status = "In transit";
     pkg.history.push({
@@ -616,7 +745,7 @@
     bits.push('<span class="track-label">' + escapeHtml(label || "Tracking") + "</span>");
     bits.push('<span class="track-number">' + escapeHtml(num) + "</span>");
     bits.push('<button type="button" class="btn btn-small btn-ghost" data-act="copy" data-num="' + escapeHtml(num) + '">Copy</button>');
-    if (official) {
+    if (official && official !== t17) {
       bits.push('<a class="btn btn-small btn-primary" href="' + official + '" target="_blank" rel="noopener noreferrer">Track</a>');
     }
     bits.push('<a class="btn btn-small btn-ghost" href="' + t17 + '" target="_blank" rel="noopener noreferrer">17TRACK</a>');
@@ -640,10 +769,10 @@
         "<h3>History</h3>" +
         (items ? '<ol class="history-list">' + items + "</ol>" : "<p class=\"hint\">No updates yet.</p>") +
         '<form class="history-form" data-act="history" data-id="' + escapeHtml(pkg.id) + '">' +
-          '<div class="span-3"><label>Status</label><select name="status">' + statusOpts + "</select></div>" +
-          '<div class="span-4"><label>Date and time</label><input name="at" type="datetime-local"></div>' +
-          '<div class="span-5"><label>Location <span class="optional">(optional)</span></label><input name="location" type="text" maxlength="80" autocomplete="off"></div>' +
-          '<div class="span-12"><label>Note <span class="optional">(optional)</span></label><input name="note" type="text" maxlength="200" autocomplete="off" placeholder="Scan, customs, or a reminder"></div>' +
+          '<div class="span-3"><label for="hist-status-' + escapeHtml(pkg.id) + '">Status</label><select id="hist-status-' + escapeHtml(pkg.id) + '" name="status">' + statusOpts + "</select></div>" +
+          '<div class="span-4"><label for="hist-at-' + escapeHtml(pkg.id) + '">Date and time</label><input id="hist-at-' + escapeHtml(pkg.id) + '" name="at" type="datetime-local"></div>' +
+          '<div class="span-5"><label for="hist-location-' + escapeHtml(pkg.id) + '">Location <span class="optional">(optional)</span></label><input id="hist-location-' + escapeHtml(pkg.id) + '" name="location" type="text" maxlength="80" autocomplete="off"></div>' +
+          '<div class="span-12"><label for="hist-note-' + escapeHtml(pkg.id) + '">Note <span class="optional">(optional)</span></label><input id="hist-note-' + escapeHtml(pkg.id) + '" name="note" type="text" maxlength="200" autocomplete="off" placeholder="Scan, customs, or a reminder"></div>' +
           '<div class="span-12"><button type="submit" class="btn btn-small btn-primary">Add update</button></div>' +
         "</form>" +
       "</div>"
@@ -725,8 +854,19 @@
   function renderList() {
     var rows = visiblePackages();
     listEl.innerHTML = rows.map(cardHtml).join("");
-    emptyState.hidden = rows.length > 0;
-    listEl.hidden = rows.length === 0;
+    var empty = rows.length === 0;
+    var emptyFilter = document.getElementById("empty-filter");
+    listEl.hidden = empty;
+    if (!empty) {
+      emptyState.hidden = true;
+      if (emptyFilter) emptyFilter.hidden = true;
+    } else if (state.packages.length > 0) {
+      emptyState.hidden = true;
+      if (emptyFilter) emptyFilter.hidden = false;
+    } else {
+      emptyState.hidden = false;
+      if (emptyFilter) emptyFilter.hidden = true;
+    }
   }
 
   function render() {
@@ -867,11 +1007,27 @@
     announce("Downloaded a JSON backup of " + state.packages.length + " package" + (state.packages.length === 1 ? "" : "s") + ".");
   }
 
+  function uniquifyPackages(rows) {
+    var seen = {};
+    return rows.map(function (p) {
+      var pkg = normalizePackage(p);
+      if (!pkg.id || seen[pkg.id]) pkg.id = uid();
+      seen[pkg.id] = true;
+      var histSeen = {};
+      pkg.history = (pkg.history || []).map(function (h) {
+        if (!h.id || histSeen[h.id]) h.id = uid();
+        histSeen[h.id] = true;
+        return h;
+      });
+      return pkg;
+    });
+  }
+
   function importJsonText(text) {
     var data = JSON.parse(text);
     var rows = Array.isArray(data) ? data : (data && data.packages);
     if (!Array.isArray(rows)) throw new Error("no packages");
-    var imported = rows.filter(function (p) { return p && (p.name || p.trackingNumber); }).map(normalizePackage);
+    var imported = uniquifyPackages(rows.filter(function (p) { return p && (p.name || p.trackingNumber); }));
     if (!imported.length) throw new Error("empty");
     if (state.packages.length && !window.confirm("Replace your current list of " + state.packages.length + " package" + (state.packages.length === 1 ? "" : "s") + " with " + imported.length + " imported package" + (imported.length === 1 ? "" : "s") + "?")) {
       return;
@@ -905,21 +1061,18 @@
       announce("Edit canceled.");
     });
 
-    trackingInput.addEventListener("input", function () {
-      carrierManual.main = false;
-      applyDetection(trackingInput, carrierSelect, "main");
-    });
-    trackingInput.addEventListener("blur", function () {
-      applyDetection(trackingInput, carrierSelect, "main");
-    });
-    domesticInput.addEventListener("input", function () {
-      carrierManual.domestic = false;
-      applyDetection(domesticInput, domesticCarrier, "domestic");
-    });
-    intlInput.addEventListener("input", function () {
-      carrierManual.intl = false;
-      applyDetection(intlInput, intlCarrier, "intl");
-    });
+    function onTrackingInput(input, select, which) {
+      var norm = normalizeTracking(input.value);
+      if (norm !== lastNormalized[which]) {
+        lastNormalized[which] = norm;
+        carrierManual[which] = false;
+      }
+      applyDetection(input, select, which);
+    }
+    trackingInput.addEventListener("input", function () { onTrackingInput(trackingInput, carrierSelect, "main"); });
+    trackingInput.addEventListener("blur", function () { applyDetection(trackingInput, carrierSelect, "main"); });
+    domesticInput.addEventListener("input", function () { onTrackingInput(domesticInput, domesticCarrier, "domestic"); });
+    intlInput.addEventListener("input", function () { onTrackingInput(intlInput, intlCarrier, "intl"); });
     carrierSelect.addEventListener("change", function () { carrierManual.main = true; });
     domesticCarrier.addEventListener("change", function () { carrierManual.domestic = true; });
     intlCarrier.addEventListener("change", function () { carrierManual.intl = true; });
@@ -934,6 +1087,20 @@
     searchInput.addEventListener("input", function () {
       state.query = searchInput.value;
       renderList();
+    });
+    var clearFiltersBtn = document.getElementById("clear-filters");
+    if (clearFiltersBtn) {
+      clearFiltersBtn.addEventListener("click", function () {
+        state.filter = "all";
+        state.carrierFilter = "all";
+        state.query = "";
+        render();
+      });
+    }
+    [nameInput, trackingInput, agentNameInput].forEach(function (el) {
+      el.addEventListener("input", function () {
+        if (el.getAttribute("aria-invalid") === "true") clearValidation();
+      });
     });
 
     document.getElementById("load-sample").addEventListener("click", function () {
@@ -1029,9 +1196,13 @@
   load();
   lastSeenDate = todayISO();
   var params = new URLSearchParams(location.search);
-  if (params.get("demo") === "1" && state.packages.length === 0) {
+  if (params.get("demo") === "1") {
     demoMode = true;
     state.packages = sampleData();
+    var banner = document.getElementById("demo-banner");
+    if (banner) banner.hidden = false;
+    var note = document.getElementById("header-note");
+    if (note) note.textContent = "Demo — not saved";
   }
   bind();
   setKind("carrier");

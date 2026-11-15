@@ -14,7 +14,7 @@ A free shipment log that runs entirely in your browser. Record USPS, China Post,
 - Filters (all / active / delivered, and by carrier), search, and sort by estimated delivery
 - Totals for active packages, arrivals this week (Sunday–Saturday), overdue, and delivered this month
 - Copy a tracking number, edit or delete a package, and export or import a JSON backup
-- Optional sample data (button or `?demo=1`). Demo data stays in memory only and is never written to this browser’s saved list
+- Optional sample data (button or `?demo=1`). Opening `?demo=1` always shows the sample list in memory, even if this browser already has saved packages, and never writes to the saved list
 
 Your data is saved only in this browser with `localStorage`. There is no account and no server. Clearing site data will erase the list.
 

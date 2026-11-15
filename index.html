@@ -30,9 +30,13 @@
         <span class="brand-mark" aria-hidden="true">PT</span>
         <span class="brand-name">Package Tracker</span>
       </a>
-      <span class="header-note">Saved in this browser</span>
+      <span class="header-note" id="header-note">Saved in this browser</span>
     </div>
   </header>
+
+  <div class="demo-banner" id="demo-banner" hidden role="status">
+    You are viewing sample data. Changes stay on this page and are not saved to this browser.
+  </div>
 
   <main id="main" tabindex="-1">
     <h1 class="page-title">Package Tracker</h1>
@@ -61,6 +65,7 @@
       <h2 id="form-heading">Add a package</h2>
       <p class="edit-banner" id="edit-banner" hidden></p>
       <form id="pkg-form" novalidate>
+        <p class="form-error" id="form-error" role="alert" hidden></p>
         <div class="field-grid">
           <div class="span-12">
             <span class="field-label" id="kind-label">Shipment type</span>
@@ -158,6 +163,10 @@
       <p class="sort-note">Sorted by estimated delivery, soonest first. Packages without a date are listed last.</p>
       <div id="package-list" class="pkg-list"></div>
       <p class="empty" id="empty-state">No packages yet. Add one above, or load sample data to try the tracker.</p>
+      <div class="empty" id="empty-filter" hidden>
+        <p>No packages match these filters.</p>
+        <button type="button" class="btn btn-ghost" id="clear-filters">Clear filters</button>
+      </div>
     </section>
   </main>
 
